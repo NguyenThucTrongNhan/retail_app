@@ -1,0 +1,39 @@
+name: retail_store
+description: Offline-first retail POS mobile app with visual product search.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Database — Isar (replaces sqflite; works on Android, iOS, Web via IndexedDB)
+  isar: ^3.1.0
+  isar_flutter_libs: ^3.1.0   # native binaries for Android/iOS/desktop
+  path_provider: ^2.1.0       # resolves app documents directory on mobile
+
+  # Networking
+  http: ^1.2.0
+
+  # Camera — visual search viewfinder
+  camera: ^0.10.5+9
+
+  # Barcode scanner (on-device ML Kit, Android/iOS only)
+  mobile_scanner: ^5.1.1
+
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+  # Isar code generator — run: flutter pub run build_runner build
+  isar_generator: ^3.1.0
+  build_runner: ^2.4.0
+
+flutter:
+  uses-material-design: true

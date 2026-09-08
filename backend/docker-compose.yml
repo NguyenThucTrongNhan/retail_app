@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: retail_db
+    restart: always
+    environment:
+      POSTGRES_DB: retail_store
+      POSTGRES_USER: shop_admin
+      POSTGRES_PASSWORD: LocalShopSecretPassword123!
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop_admin -d retail_store"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend-api:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    container_name: retail_api
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DATABASE_URL: postgres://shop_admin:LocalShopSecretPassword123!@postgres:5432/retail_store
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads   # persistent product image storage (C4)
+
+volumes:
+  pgdata:
+    driver: local
