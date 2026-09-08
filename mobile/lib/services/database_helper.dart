@@ -34,8 +34,8 @@ class DatabaseHelper {
       SyncOutboxSchema,
     ];
     if (kIsWeb) {
-      // Web: uses browser IndexedDB — no directory path needed.
-      return await Isar.open(schemas);
+      // Web: Isar uses IndexedDB; directory is ignored but required by the API.
+      return await Isar.open(schemas, directory: '');
     }
     final dir = await getApplicationDocumentsDirectory();
     return await Isar.open(schemas, directory: dir.path);

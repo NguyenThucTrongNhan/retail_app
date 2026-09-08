@@ -4,6 +4,8 @@ part 'category.g.dart';
 
 @collection
 class Category {
+  Category();
+
   Id isarId = Isar.autoIncrement;
 
   @Index(unique: true, replace: true)

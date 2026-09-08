@@ -1,25 +1,12 @@
 version: '3.8'
 
-services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: retail_db
-    restart: always
-    environment:
-      POSTGRES_DB: retail_store
-      POSTGRES_USER: shop_admin
-      POSTGRES_PASSWORD: LocalShopSecretPassword123!
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./init-scripts:/docker-entrypoint-initdb.d
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U shop_admin -d retail_store"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+# LOCAL DEV: PostgreSQL runs locally (not in Docker).
+# Run backend/scripts/local_db_setup.sql manually to create the database.
+# See docs/manual/dev_setup.md — PostgreSQL section for install instructions.
+#
+# This file is kept for production / staging deployment of the API container only.
 
+services:
   backend-api:
     build:
       context: ./
@@ -31,13 +18,33 @@ services:
     environment:
       NODE_ENV: production
       PORT: 8080
-      DATABASE_URL: postgres://shop_admin:LocalShopSecretPassword123!@postgres:5432/retail_store
-    depends_on:
-      postgres:
-        condition: service_healthy
+      # Points to the host machine's local PostgreSQL instance
+      DATABASE_URL: postgres://shop_admin:LocalShopSecretPassword123!@host.docker.internal:5432/retail_store
     volumes:
       - ./uploads:/app/uploads   # persistent product image storage (C4)
 
-volumes:
-  pgdata:
-    driver: local
+# ---------------------------------------------------------------------------
+# POSTGRES VIA DOCKER (optional — uncomment if you prefer Docker for postgres)
+# ---------------------------------------------------------------------------
+#  postgres:
+#    image: pgvector/pgvector:pg16
+#    container_name: retail_db
+#    restart: always
+#    environment:
+#      POSTGRES_DB: retail_store
+#      POSTGRES_USER: shop_admin
+#      POSTGRES_PASSWORD: LocalShopSecretPassword123!
+#    ports:
+#      - "5432:5432"
+#    volumes:
+#      - pgdata:/var/lib/postgresql/data
+#      - ./init-scripts:/docker-entrypoint-initdb.d
+#    healthcheck:
+#      test: ["CMD-SHELL", "pg_isready -U shop_admin -d retail_store"]
+#      interval: 5s
+#      timeout: 5s
+#      retries: 5
+
+# volumes:
+#   pgdata:
+#     driver: local

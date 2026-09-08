@@ -96,8 +96,8 @@ vision_service/.ipynb_checkpoints/
 # EDITORS & OS
 # =============================================================================
 
-# VS Code — personal settings only; shared workspace config is kept
-.vscode/settings.json
+# VS Code — only ignore personal/local overrides
+# .vscode/settings.json is committed (shared workspace config — git.ignoredRepositories etc.)
 .vscode/*.code-workspace
 
 # Claude Code — local personal settings

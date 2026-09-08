@@ -18,6 +18,13 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    # Isar-generated files use experimental index APIs — warnings are expected
+    # and cannot be fixed without modifying generated code.
+    - lib/**/*.g.dart
+  errors:
+    # Isar 3.x generated code calls experimental index methods; suppress globally
+    # since the files are auto-generated and cannot be edited manually.
+    experimental_member_use: ignore
 
 linter:
   # The lint rules applied to this project can be customized in the

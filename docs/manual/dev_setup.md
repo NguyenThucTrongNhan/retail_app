@@ -228,20 +228,88 @@ python -c "import torch; print(torch.__version__)"
 
 ---
 
-## Step 8 — Docker Desktop
+## Step 8 — PostgreSQL 16 (local install)
 
-Download from https://www.docker.com/products/docker-desktop/
+PostgreSQL runs locally on your machine — no Docker needed for local dev.
+Docker is kept only for production/staging deployment of the API container.
 
-Install with WSL2 backend (default on Windows 10/11).
+### 8a — Install PostgreSQL 16
 
-After installation, start Docker Desktop from the Start menu and wait for the
-whale icon in the system tray to show **"Docker Desktop is running"**.
+Download the Windows installer from https://www.postgresql.org/download/windows/
+(use the EDB interactive installer).
+
+During installation:
+- Set the **superuser password** (remember this — you will need it in Step 8c)
+- Keep the default port **5432**
+- Tick **pgAdmin 4** in the component list — useful for running SQL scripts via GUI
 
 **Verify:**
 ```powershell
-docker --version          # Docker version 25.x.x
-docker compose version    # Docker Compose version v2.x.x
+psql --version   # psql (PostgreSQL) 16.x
 ```
+
+If `psql` is not found, add the bin folder to PATH:
+```
+C:\Program Files\PostgreSQL\16\bin
+```
+
+### 8b — Install pgvector extension
+
+pgvector adds the `vector` data type used for CLIP image embeddings.
+
+1. Go to https://github.com/pgvector/pgvector/releases
+2. Download the prebuilt zip for **pg16 / Windows** (e.g. `pgvector-windows-pg16.zip`)
+3. Extract and copy files to the PostgreSQL install directory:
+   - `vector.dll` → `C:\Program Files\PostgreSQL\16\lib\`
+   - `vector.control` → `C:\Program Files\PostgreSQL\16\share\extension\`
+   - `vector--*.sql` → `C:\Program Files\PostgreSQL\16\share\extension\`
+4. Restart the PostgreSQL service:
+
+```powershell
+Restart-Service -Name "postgresql-x64-16"
+```
+
+**Verify inside psql:**
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+-- Should return: CREATE EXTENSION
+DROP EXTENSION vector;
+```
+
+### 8c — Create the database and schema
+
+Run the setup script in two steps.
+
+**Step 1 — create role and database** (run as postgres superuser):
+```powershell
+psql -U postgres -f D:\2026\retail_app\backend\scripts\local_db_setup.sql
+```
+
+Enter the postgres superuser password when prompted.
+
+**Step 2 — create tables, indexes, triggers** (run as shop_admin):
+```powershell
+psql -U shop_admin -d retail_store -f D:\2026\retail_app\backend\scripts\local_db_setup.sql
+```
+
+Password: `LocalShopSecretPassword123!`
+
+> **pgAdmin alternative:** Open pgAdmin → connect to the `postgres` database →
+> open Query Tool → paste and run Part A of the script. Then switch to the
+> `retail_store` database → paste and run Part B.
+
+**Verify:**
+```powershell
+psql -U shop_admin -d retail_store -c "\dt"
+# Should list: categories, products
+```
+
+### 8d — Docker Desktop (optional)
+
+Docker is only needed if you want to run the backend API in a container
+(production mode). For local dev (`npm run dev`), Docker is not required.
+
+If you do install it: https://www.docker.com/products/docker-desktop/ (WSL2 backend).
 
 ---
 
@@ -324,25 +392,28 @@ npx tsc --noEmit
 
 ---
 
-## Step 12 — Start PostgreSQL and seed the database
+## Step 12 — Start PostgreSQL service and seed the database
+
+PostgreSQL runs as a local Windows service (installed in Step 8).
+Make sure it is running before starting the backend.
+
+**Check / start the PostgreSQL service:**
+```powershell
+Get-Service -Name "postgresql-x64-16"
+# If Status is Stopped:
+Start-Service -Name "postgresql-x64-16"
+```
+
+**Verify connection:**
+```powershell
+psql -U shop_admin -d retail_store -c "SELECT COUNT(*) FROM products;"
+# Should return 0 (empty before seed)
+```
+
+### Seed 5,000 products (run once, from backend/ folder)
 
 ```powershell
 cd D:\2026\retail_app\backend
-docker compose up -d
-```
-
-Wait ~15 seconds for the container to initialise. The SQL init script runs
-automatically on first boot.
-
-**Verify the container is healthy:**
-```powershell
-docker ps
-# STATUS should show "healthy" for the postgres container
-```
-
-### Seed 5,000 products (run once)
-
-```powershell
 npm run seed:db
 # Seeded batch 1/10 ... Seeded batch 10/10 — Done.
 ```
@@ -408,7 +479,9 @@ In the app Config screen, change IP from `localhost` to your PC's LAN IP
 |---------|-----|
 | `flutter: command not found` | `D:\Mobile_dev\flutter\bin` not in PATH — re-add and restart terminal |
 | `build_runner` fails with "already exists" | Add `--delete-conflicting-outputs` flag |
-| Docker container exits immediately | Run `docker logs <container-id>` — usually a port conflict on 5432 |
+| `psql: error: connection refused` | PostgreSQL service not running — run `Start-Service postgresql-x64-16` |
+| `CREATE EXTENSION vector` fails | pgvector not installed — follow Step 8b |
+| Port 5432 already in use | Another PostgreSQL instance running — check Services panel |
 | `npm run dev` — "Cannot find module" | Run `npm install` first |
 | Vision service — CUDA not found | Normal on machines without GPU; `device: cpu` is expected |
 | `flutter doctor` shows Chrome missing | Install Chrome and re-run |
@@ -424,11 +497,11 @@ D:\2026\retail_app\
 ├── backend\                  Node.js Fastify (port 8080)
 │   ├── src\server.ts
 │   ├── src\seed.ts
-│   ├── init-scripts\         SQL run automatically by Docker on first boot
-│   ├── scripts\              Manual admin scripts (create_vector_index.sql)
+│   ├── init-scripts\         SQL reference (used by Docker only)
+│   ├── scripts\              local_db_setup.sql, create_vector_index.sql
 │   ├── uploads\              Product images (served at /static/images/)
 │   ├── .env                  Local dev environment variables
-│   └── docker-compose.yml    PostgreSQL + pgvector container
+│   └── docker-compose.yml    API container only (postgres runs locally)
 ├── mobile\                   Flutter app
 │   ├── lib\
 │   │   ├── config\           AppConfig (server IP)
@@ -455,7 +528,9 @@ D:\Mobile_dev\flutter\               Flutter SDK (NOT on C:\)
 ## Daily workflow (after first-time setup)
 
 ```powershell
-# 1. Start Docker (if not already running — launch Docker Desktop from tray)
+# 1. Ensure PostgreSQL local service is running
+Start-Service -Name "postgresql-x64-16"   # skip if already running
+
 # 2. Open VS Code in project root
 code D:\2026\retail_app
 

@@ -3,9 +3,15 @@ import fastifyCors from '@fastify/cors';
 import fastifyPostgres from '@fastify/postgres';
 import fastifyStatic from '@fastify/static';
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 
 dotenv.config();
+
+// Ensure uploads directory exists before @fastify/static registers it.
+// Creates it automatically so the server starts even on a fresh clone.
+const uploadsDir = path.join(process.cwd(), 'uploads');
+fs.mkdirSync(uploadsDir, { recursive: true });
 
 const fastify: FastifyInstance = Fastify({ logger: true });
 
@@ -20,12 +26,10 @@ fastify.register(fastifyPostgres, {
     'postgres://shop_admin:LocalShopSecretPassword123!@localhost:5432/retail_store',
 });
 
-// C4 fix: serve product images uploaded via the embed pipeline.
-// Images are stored at backend/uploads/<SKU>.jpg and accessed as
-// GET /static/images/<SKU>.jpg from the mobile app.
-// B1 fix: process.cwd() resolves to backend/ when `npm run dev` runs there.
+// C4: serve product images at GET /static/images/<filename>
+// B1: process.cwd() = backend/ when `npm run dev` runs from that directory
 fastify.register(fastifyStatic, {
-  root: path.join(process.cwd(), 'uploads'),
+  root: uploadsDir,
   prefix: '/static/images/',
   decorateReply: false,
 });
@@ -52,13 +56,20 @@ interface PushBody {
 
 // ---------------------------------------------------------------------------
 // HEALTH CHECK
+// /health        — always 200 if the server process is running
+// /health/db     — checks live database connectivity
 // ---------------------------------------------------------------------------
 fastify.get('/health', async (_req: FastifyRequest, reply: FastifyReply) => {
+  return reply.status(200).send({ status: 'ok' });
+});
+
+fastify.get('/health/db', async (_req: FastifyRequest, reply: FastifyReply) => {
   try {
     await fastify.pg.query('SELECT 1');
     return reply.status(200).send({ status: 'ok', database: 'connected' });
-  } catch {
-    return reply.status(500).send({ status: 'error', database: 'disconnected' });
+  } catch (err) {
+    fastify.log.error(err, 'Database health check failed');
+    return reply.status(503).send({ status: 'error', database: 'disconnected' });
   }
 });
 
@@ -200,14 +211,22 @@ fastify.post(
 // START
 // ---------------------------------------------------------------------------
 const start = async () => {
+  const port = parseInt(process.env.PORT || '8080', 10);
+  const host = process.env.HOST || '0.0.0.0';
+  const dbUrl = (process.env.DATABASE_URL || 'postgres://...@localhost:5432/retail_store')
+    .replace(/:([^:@]+)@/, ':***@'); // mask password in logs
+
+  fastify.log.info(`Working directory : ${process.cwd()}`);
+  fastify.log.info(`Uploads directory : ${uploadsDir}`);
+  fastify.log.info(`Database URL      : ${dbUrl}`);
+
   try {
-    const port = parseInt(process.env.PORT || '8080', 10);
-    const host = process.env.HOST || '0.0.0.0';
     await fastify.listen({ port, host });
-    fastify.log.info(`Server running at http://${host}:${port}`);
-    fastify.log.info(`Product images served at http://localhost:${port}/static/images/<SKU>.jpg`);
+    fastify.log.info(`Server ready      : http://${host}:${port}`);
+    fastify.log.info(`Health check      : http://localhost:${port}/health`);
+    fastify.log.info(`DB health check   : http://localhost:${port}/health/db`);
   } catch (err) {
-    fastify.log.error(err);
+    fastify.log.error(err, 'Server failed to start — check database connection and port availability');
     process.exit(1);
   }
 };

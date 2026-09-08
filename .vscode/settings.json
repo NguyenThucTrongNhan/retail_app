@@ -1,0 +1,19 @@
+{
+  // Tell VS Code not to treat the Flutter SDK as part of this workspace's git.
+  // Without this, VS Code auto-detects D:\Mobile_dev\flutter as a repo and
+  // merges its thousands of files into the Source Control count.
+  "git.ignoredRepositories": [
+    "D:\\Mobile_dev\\flutter"
+  ],
+
+  // Only scan for git repos inside the workspace folder, not parent directories.
+  "git.autoRepositoryDetection": "openEditors",
+
+  // Recommended file associations for this project
+  "files.associations": {
+    "*.dart": "dart",
+    "*.ts": "typescript",
+    "*.py": "python",
+    "docker-compose*.yml": "dockercompose"
+  }
+}

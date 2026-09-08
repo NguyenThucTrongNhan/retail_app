@@ -4,6 +4,8 @@ part 'product.g.dart';
 
 @collection
 class Product {
+  Product();
+
   Id isarId = Isar.autoIncrement;
 
   /// UUID from the backend server — used as the upsert key via putAllByIndex.

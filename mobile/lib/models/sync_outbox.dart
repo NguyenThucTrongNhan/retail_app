@@ -6,6 +6,8 @@ part 'sync_outbox.g.dart';
 /// Processed and flushed to the server on the next successful sync.
 @collection
 class SyncOutbox {
+  SyncOutbox();
+
   Id isarId = Isar.autoIncrement;
 
   late String productId;

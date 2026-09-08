@@ -177,7 +177,7 @@ class _CatalogSearchScreenState extends State<CatalogSearchScreen> {
                 if (newPrice != null && newStock != null) {
                   await DatabaseHelper.instance
                       .updateProductLocally(product.id, newPrice, newStock);
-                  if (mounted) { Navigator.pop(ctx); _refresh(); }
+                  if (ctx.mounted) { Navigator.pop(ctx); _refresh(); }
                 }
               },
               child: const Text('Save (syncs on next connection)'),
@@ -203,12 +203,13 @@ class _CatalogSearchScreenState extends State<CatalogSearchScreen> {
                 isScrollControlled: true,
                 builder: (_) => BarcodeScannerModal(
                   onBarcodeScanned: (barcode) async {
+                    final messenger = ScaffoldMessenger.of(context);
                     final results =
                         await DatabaseHelper.instance.searchProducts(barcode);
                     if (results.isNotEmpty && mounted) {
                       widget.onAddToBasket(results.first);
                     } else if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      messenger.showSnackBar(SnackBar(
                         content: Text('Barcode not in catalog: $barcode'),
                         backgroundColor: Colors.red.shade800,
                       ));

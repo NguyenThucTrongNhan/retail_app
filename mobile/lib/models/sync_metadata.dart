@@ -4,6 +4,8 @@ part 'sync_metadata.g.dart';
 
 @collection
 class SyncMetadata {
+  SyncMetadata();
+
   Id isarId = Isar.autoIncrement;
 
   @Index(unique: true, replace: true)

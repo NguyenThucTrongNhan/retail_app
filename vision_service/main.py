@@ -10,6 +10,10 @@ import os
 import time
 from typing import List
 
+# Redirect HuggingFace model cache to D: drive before importing transformers/torch.
+# Default C:\Users\..\.cache\ fills up quickly with the 600 MB CLIP model.
+os.environ.setdefault("HF_HOME", r"D:\hf_cache")
+
 import psycopg2
 import torch
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -68,7 +72,7 @@ def embed(image: Image.Image) -> List[float]:
 # ---------------------------------------------------------------------------
 @app.on_event("startup")
 async def warmup():
-    blank = Image.new("RGB", (1, 1), color=(0, 0, 0))
+    blank = Image.new("RGB", (224, 224), color=(128, 128, 128))
     embed(blank)
     print("CLIP warmup complete — ready to serve.")
 
