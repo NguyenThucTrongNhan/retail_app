@@ -35,10 +35,10 @@ class Product {
     ..sku = j['sku'] as String
     ..name = j['name'] as String
     ..categoryId = j['category_id'] as String?
-    ..price = (j['price'] as num).toDouble()
-    ..stockQuantity = j['stock_quantity'] as int
+    ..price = double.parse(j['price'].toString())
+    ..stockQuantity = int.parse(j['stock_quantity'].toString())
     ..barcode = j['barcode'] as String?
     ..imageUrl = j['image_url'] as String?
-    ..version = j['version'] as int
+    ..version = int.parse(j['version'].toString())
     ..updatedAt = j['updated_at'] as String;
 }

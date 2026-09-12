@@ -1,0 +1,77 @@
+services:
+
+  # ---------------------------------------------------------------------------
+  # Keycloak — identity provider, one realm per tenant store
+  # Admin Console: http://localhost:9090  (admin / admin)
+  # Internal URL used by backend + auth_service: http://keycloak:8080
+  # KC_HOSTNAME=keycloak ensures JWT iss claim is always http://keycloak:8080/realms/...
+  # ---------------------------------------------------------------------------
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: keycloak          # Fixes iss claim to http://keycloak:8080/realms/...
+      KC_HOSTNAME_PORT: "8080"
+      KC_HOSTNAME_STRICT: "false"    # Still allow admin console from localhost:9090
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "9090:8080"                  # Host 9090 avoids conflict with backend on 8080
+
+  # ---------------------------------------------------------------------------
+  # Main backend — Fastify sync API
+  # PostgreSQL stays on Windows host → accessed via host.docker.internal
+  # Source mounted for tsx watch hot reload
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend/src:/app/src
+    environment:
+      PORT: 8080
+      HOST: 0.0.0.0
+      DATABASE_URL: postgres://${POSTGRES_USER:-shop_admin}:${POSTGRES_PASSWORD:-LocalShopSecretPassword123!}@host.docker.internal:5432/${POSTGRES_DB:-retail_store}
+      KEYCLOAK_URL: http://keycloak:8080
+    depends_on:
+      - keycloak
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Required for WSL2 + Docker Engine (no-op on Docker Desktop)
+
+  # ---------------------------------------------------------------------------
+  # Auth service — Keycloak ROPC proxy
+  # Source mounted for tsx watch hot reload
+  # ---------------------------------------------------------------------------
+  auth_service:
+    build:
+      context: ./auth_service
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./auth_service/src:/app/src
+    environment:
+      PORT: 8082
+      HOST: 0.0.0.0
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-pos-auth-service}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+    depends_on:
+      - keycloak
+
+  # ---------------------------------------------------------------------------
+  # Nginx — HTTP-only reverse proxy for dev (no TLS)
+  # Mobile sets server URL to: http://10.0.2.2:8080   (Android emulator)
+  #                        or: http://<LAN-IP>:8080   (physical device)
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - auth_service
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # For proxying vision service on host

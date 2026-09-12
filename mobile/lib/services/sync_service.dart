@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/sync_outbox.dart';
+import 'auth_service.dart';
 import 'database_helper.dart';
 
 class SyncResult {
@@ -23,14 +24,25 @@ class SyncResult {
 /// C2: offline edits stored in SyncOutbox are flushed at end of every sync.
 /// C8: passes since_timestamp so the backend can filter categories correctly.
 class SyncService {
-  final String baseUrl; // e.g. 'http://192.168.1.50:8080/api/v1'
+  final String baseUrl;     // e.g. 'https://retail.example.com/api/v1'
+  final String authBaseUrl; // same base — Nginx routes /auth/* to auth service
 
-  const SyncService({required this.baseUrl});
+  const SyncService({required this.baseUrl, required this.authBaseUrl});
+
+  Future<Map<String, String>> _buildHeaders() async {
+    final token = await AuthService.instance.getValidAccessToken(authBaseUrl);
+    if (token == null) throw Exception('Not authenticated — please sign in again');
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
 
   Future<SyncResult> performSync() async {
     final db = DatabaseHelper.instance;
     final lastVersion = await db.getLastSyncedVersion();
     final lastTimestamp = await db.getLastSyncedTimestamp(); // C8
+    final headers = await _buildHeaders();
 
     // Build pull URL — include since_timestamp so category query is accurate (C8)
     final queryParams = {
@@ -41,7 +53,7 @@ class SyncService {
         .replace(queryParameters: queryParams);
 
     final response =
-        await http.get(uri).timeout(const Duration(seconds: 30));
+        await http.get(uri, headers: headers).timeout(const Duration(seconds: 30));
 
     if (response.statusCode != 200) {
       throw Exception('Pull failed — HTTP ${response.statusCode}');
@@ -117,10 +129,11 @@ class SyncService {
     };
 
     try {
+      final headers = await _buildHeaders();
       final response = await http
           .post(
             Uri.parse('$baseUrl/sync/push'),
-            headers: {'Content-Type': 'application/json'},
+            headers: headers,
             body: jsonEncode(payload),
           )
           .timeout(const Duration(seconds: 15));

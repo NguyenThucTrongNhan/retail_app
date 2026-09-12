@@ -3,6 +3,10 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Accept --tenant <store_code> CLI arg; defaults to 'default' for local dev
+const tenantArg = process.argv.indexOf('--tenant');
+const TENANT_ID = tenantArg !== -1 ? process.argv[tenantArg + 1] : 'default';
+
 const client = new Client({
   connectionString:
     process.env.DATABASE_URL ||
@@ -38,22 +42,23 @@ const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 const barcode = (i: number) => `893${String(i).padStart(9, '0')}`;
 
 async function seed() {
-  console.log('Starting 5,000 product seed…\n');
+  console.log(`Starting 5,000 product seed for tenant "${TENANT_ID}"…\n`);
   const t = Date.now();
 
   try {
     await client.connect();
     await client.query('BEGIN');
 
-    console.log('Clearing existing data…');
-    await client.query('TRUNCATE TABLE products, categories RESTART IDENTITY CASCADE;');
+    console.log(`Clearing existing data for tenant "${TENANT_ID}"…`);
+    await client.query('DELETE FROM products WHERE tenant_id = $1;', [TENANT_ID]);
+    await client.query('DELETE FROM categories WHERE tenant_id = $1;', [TENANT_ID]);
 
     console.log('Inserting categories…');
     const catIds: string[] = [];
     for (const name of CATEGORIES) {
       const { rows } = await client.query(
-        'INSERT INTO categories (name) VALUES ($1) RETURNING id;',
-        [name]
+        'INSERT INTO categories (name, tenant_id) VALUES ($1, $2) RETURNING id;',
+        [name, TENANT_ID]
       );
       catIds.push(rows[0].id);
     }
@@ -69,7 +74,7 @@ async function seed() {
 
       for (let j = 0; j < batch && i + j < total; j++) {
         const n = i + j + 1;
-        tuples.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
+        tuples.push(`($${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++},$${p++})`);
         values.push(
           `SKU-${String(n).padStart(5, '0')}`,
           `${pick(BRANDS)} ${pick(PRODUCT_TYPES)} #${n}`,
@@ -77,12 +82,13 @@ async function seed() {
           (Math.random() * 48 + 0.99).toFixed(2),
           Math.floor(Math.random() * 150) + 5,
           barcode(n),
-          `http://localhost:8080/static/images/SKU-${String(n).padStart(5, '0')}.jpg`
+          `http://localhost:8080/static/images/SKU-${String(n).padStart(5, '0')}.jpg`,
+          TENANT_ID
         );
       }
 
       await client.query(
-        `INSERT INTO products (sku, name, category_id, price, stock_quantity, barcode, image_url)
+        `INSERT INTO products (sku, name, category_id, price, stock_quantity, barcode, image_url, tenant_id)
          VALUES ${tuples.join(', ')};`,
         values
       );
@@ -90,7 +96,7 @@ async function seed() {
     }
 
     await client.query('COMMIT');
-    console.log(`\nDone — ${total} products in ${((Date.now() - t) / 1000).toFixed(2)}s`);
+    console.log(`\nDone — ${total} products for tenant "${TENANT_ID}" in ${((Date.now() - t) / 1000).toFixed(2)}s`);
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Seed failed — rolled back.', err);

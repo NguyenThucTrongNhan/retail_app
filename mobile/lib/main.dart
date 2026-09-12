@@ -2,25 +2,46 @@ import 'package:flutter/material.dart';
 
 import 'config/app_config.dart';
 import 'models/product.dart';
-import 'screens/config_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/settings_screen.dart';
 import 'screens/visual_search_screen.dart';
+import 'services/auth_service.dart';
 import 'services/database_helper.dart';
 import 'services/sync_service.dart';
 import 'widgets/barcode_scanner_modal.dart';
 
 // ---------------------------------------------------------------------------
-// URL resolution is now dynamic via AppConfig (C6 fix).
-// Staff sets the server IP once in the Config screen (gear icon on Sync tab).
-// Default 'localhost' works for Flutter web / same-machine dev.
+// Server URL configured in Settings tab. All services (auth, sync, vision)
+// are accessed through a single Nginx reverse proxy URL.
 // ---------------------------------------------------------------------------
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AuthService.instance.init(); // rehydrate tokens from secure storage
   runApp(const RetailApp());
 }
 
-class RetailApp extends StatelessWidget {
+class RetailApp extends StatefulWidget {
   const RetailApp({super.key});
+
+  @override
+  State<RetailApp> createState() => _RetailAppState();
+}
+
+class _RetailAppState extends State<RetailApp> {
+  ThemeMode _themeMode = ThemeMode.system;
+  bool _isAuthenticated = AuthService.instance.isAuthenticated;
+
+  @override
+  void initState() {
+    super.initState();
+    AppConfig.getThemeMode().then((mode) {
+      if (mounted) setState(() => _themeMode = mode);
+    });
+  }
+
+  void _onLoginSuccess() => setState(() => _isAuthenticated = true);
+  void _onLogout()       => setState(() => _isAuthenticated = false);
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +49,18 @@ class RetailApp extends StatelessWidget {
       title: 'Store Retail POS',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
-      home: const MainNavigationScreen(),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: Colors.indigo,
+        brightness: Brightness.dark,
+      ),
+      themeMode: _themeMode,
+      home: _isAuthenticated
+          ? MainNavigationScreen(
+              onThemeChanged: (mode) => setState(() => _themeMode = mode),
+              onLogout: _onLogout,
+            )
+          : LoginScreen(onLoginSuccess: _onLoginSuccess),
     );
   }
 }
@@ -37,7 +69,13 @@ class RetailApp extends StatelessWidget {
 // MAIN TAB NAVIGATOR
 // ===========================================================================
 class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+  final ValueChanged<ThemeMode> onThemeChanged;
+  final VoidCallback onLogout;
+  const MainNavigationScreen({
+    super.key,
+    required this.onThemeChanged,
+    required this.onLogout,
+  });
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -59,12 +97,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Widget build(BuildContext context) {
     final screens = [
       CatalogSearchScreen(onAddToBasket: _addToBasket),
-      VisualSearchScreen(onAddToBasket: _addToBasket), // C6: no URL param
+      VisualSearchScreen(onAddToBasket: _addToBasket),
       BasketCalculatorScreen(
         basket: _basket,
         onClearBasket: () => setState(() => _basket.clear()),
       ),
-      const SyncControlScreen(),
+      SyncControlScreen(onLogout: widget.onLogout),
+      SettingsScreen(onThemeChanged: widget.onThemeChanged),
     ];
 
     return Scaffold(
@@ -84,6 +123,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             label: 'Calculator',
           ),
           const NavigationDestination(icon: Icon(Icons.sync), label: 'Sync'),
+          const NavigationDestination(
+              icon: Icon(Icons.settings_outlined), label: 'Settings'),
         ],
       ),
     );
@@ -103,26 +144,81 @@ class CatalogSearchScreen extends StatefulWidget {
 
 class _CatalogSearchScreenState extends State<CatalogSearchScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
+  final ScrollController _scrollCtrl = ScrollController();
   List<Product> _products = [];
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  int _currentOffset = 0;
+  int _searchGeneration = 0;
+  int _pageSize = 30;
 
   @override
   void initState() {
     super.initState();
-    _refresh();
+    _scrollCtrl.addListener(_onScroll);
+    AppConfig.getProductsPerPage().then((n) {
+      if (mounted) setState(() => _pageSize = n);
+      _refresh();
+    });
   }
 
   @override
   void dispose() {
+    _scrollCtrl.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
 
+  void _onScroll() {
+    if (_scrollCtrl.position.pixels >=
+        _scrollCtrl.position.maxScrollExtent - 200) {
+      _loadMore();
+    }
+  }
+
   Future<void> _refresh() async {
-    setState(() => _isLoading = true);
-    final results =
-        await DatabaseHelper.instance.searchProducts(_searchCtrl.text);
-    if (mounted) setState(() { _products = results; _isLoading = false; });
+    _searchGeneration++;
+    final generation = _searchGeneration;
+    setState(() {
+      _isLoading = true;
+      _currentOffset = 0;
+      _hasMore = true;
+      _products = [];
+    });
+    final results = await DatabaseHelper.instance.searchProducts(
+      _searchCtrl.text,
+      limit: _pageSize,
+      offset: 0,
+    );
+    if (!mounted || generation != _searchGeneration) return;
+    setState(() {
+      _products = results;
+      _currentOffset = results.length;
+      _hasMore = results.length == _pageSize;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore || _isLoading) return;
+    final generation = _searchGeneration;
+    setState(() => _isLoadingMore = true);
+    final results = await DatabaseHelper.instance.searchProducts(
+      _searchCtrl.text,
+      limit: _pageSize,
+      offset: _currentOffset,
+    );
+    if (!mounted || generation != _searchGeneration) {
+      if (mounted) setState(() => _isLoadingMore = false);
+      return;
+    }
+    setState(() {
+      _products.addAll(results);
+      _currentOffset += results.length;
+      _hasMore = results.length == _pageSize;
+      _isLoadingMore = false;
+    });
   }
 
   void _showEditModal(Product product) {
@@ -248,8 +344,26 @@ class _CatalogSearchScreenState extends State<CatalogSearchScreen> {
                     ? const Center(
                         child: Text('No products found. Run sync first.'))
                     : ListView.builder(
-                        itemCount: _products.length,
+                        controller: _scrollCtrl,
+                        itemCount: _products.length +
+                            (_hasMore || _isLoadingMore ? 1 : 0),
                         itemBuilder: (_, i) {
+                          if (i == _products.length) {
+                            return Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 16),
+                              child: Center(
+                                child: _isLoadingMore
+                                    ? const SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      )
+                                    : const SizedBox.shrink(),
+                              ),
+                            );
+                          }
                           final p = _products[i];
                           return ListTile(
                             leading: CircleAvatar(
@@ -368,7 +482,8 @@ class BasketCalculatorScreen extends StatelessWidget {
 // TAB 4 — SYNC CONTROL
 // ===========================================================================
 class SyncControlScreen extends StatefulWidget {
-  const SyncControlScreen({super.key});
+  final VoidCallback onLogout;
+  const SyncControlScreen({super.key, required this.onLogout});
 
   @override
   State<SyncControlScreen> createState() => _SyncControlScreenState();
@@ -407,8 +522,9 @@ class _SyncControlScreenState extends State<SyncControlScreen> {
       _statusMessage = 'Connecting to backend…';
     });
     try {
-      final url = await AppConfig.syncBaseUrl(); // C6: dynamic URL
-      final result = await SyncService(baseUrl: url).performSync();
+      final syncUrl = await AppConfig.syncBaseUrl();
+      final authUrl = await AppConfig.authBaseUrl();
+      final result = await SyncService(baseUrl: syncUrl, authBaseUrl: authUrl).performSync();
       final action = result.wasInitialImport
           ? 'Initial import: ${result.itemsReceived} products loaded'
           : 'Delta: ${result.itemsReceived} updated';
@@ -431,12 +547,13 @@ class _SyncControlScreenState extends State<SyncControlScreen> {
         title: const Text('Sync Diagnostics'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Server config',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ConfigScreen()),
-            ),
+            icon: const Icon(Icons.logout),
+            tooltip: 'Sign out',
+            onPressed: () async {
+              final authUrl = await AppConfig.authBaseUrl();
+              await AuthService.instance.logout(authUrl);
+              widget.onLogout();
+            },
           ),
         ],
       ),

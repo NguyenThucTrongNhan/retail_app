@@ -7,7 +7,9 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
-    "seed:db": "tsx src/seed.ts"
+    "seed:db": "tsx src/seed.ts",
+    "images:fetch": "tsx src/scripts/fetch_product_images.ts",
+    "images:embed": "tsx src/scripts/embed_products.ts"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",
@@ -16,6 +18,8 @@
     "@fastify/static": "^7.0.4",
     "dotenv": "^16.4.5",
     "fastify": "^4.26.2",
+    "fastify-plugin": "^4.5.1",
+    "jose": "^5.9.3",
     "pg": "^8.11.3",
     "pgvector": "^0.1.8"
   },

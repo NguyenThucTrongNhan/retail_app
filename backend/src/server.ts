@@ -5,6 +5,7 @@ import fastifyStatic from '@fastify/static';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import jwtAuthPlugin from './plugins/jwt-auth.js';
 
 dotenv.config();
 
@@ -33,6 +34,8 @@ fastify.register(fastifyStatic, {
   prefix: '/static/images/',
   decorateReply: false,
 });
+
+fastify.register(jwtAuthPlugin);
 
 // --- TYPE DEFINITIONS ---
 interface PullQuery {
@@ -78,10 +81,12 @@ fastify.get('/health/db', async (_req: FastifyRequest, reply: FastifyReply) => {
 // ---------------------------------------------------------------------------
 fastify.get(
   '/api/v1/sync/pull',
+  { preHandler: fastify.requireAuth },
   async (
     request: FastifyRequest<{ Querystring: PullQuery }>,
     reply: FastifyReply
   ) => {
+    const tenantId = request.user!.tenant_id;
     const sinceVersion = parseInt(request.query.since_version || '0', 10);
     const sinceTimestamp = request.query.since_timestamp || null;
     const limit = Math.min(parseInt(request.query.limit || '5000', 10), 5000);
@@ -98,19 +103,20 @@ fastify.get(
       const { rows: categories } = await fastify.pg.query(
         `SELECT id, name, updated_at, is_deleted
          FROM categories
-         WHERE $1 = 0
-            OR updated_at > $2::timestamptz`,
-        [sinceVersion, sinceTimestamp ?? '1970-01-01T00:00:00Z']
+         WHERE tenant_id = $1
+           AND ($2 = 0 OR updated_at > $3::timestamptz)`,
+        [tenantId, sinceVersion, sinceTimestamp ?? '1970-01-01T00:00:00Z']
       );
 
       const { rows: products } = await fastify.pg.query(
         `SELECT id, sku, name, category_id, price, stock_quantity, barcode,
                 image_url, version, updated_at, is_deleted
          FROM products
-         WHERE version > $1
+         WHERE tenant_id = $1
+           AND version > $2
          ORDER BY version ASC
-         LIMIT $2`,
-        [sinceVersion, limit]
+         LIMIT $3`,
+        [tenantId, sinceVersion, limit]
       );
 
       const updatedProducts = products.filter((p) => !p.is_deleted);
@@ -147,10 +153,12 @@ fastify.get(
 // ---------------------------------------------------------------------------
 fastify.post(
   '/api/v1/sync/push',
+  { preHandler: fastify.requireAuth },
   async (
     request: FastifyRequest<{ Body: PushBody }>,
     reply: FastifyReply
   ) => {
+    const tenantId = request.user!.tenant_id;
     const { changes } = request.body || {};
     if (!changes?.products?.length) {
       return reply.status(400).send({ error: 'No product updates in payload' });
@@ -161,8 +169,8 @@ fastify.post(
         const records = [];
         for (const item of changes.products!) {
           const updates: string[] = [];
-          const params: unknown[] = [item.id];
-          let idx = 2;
+          const params: unknown[] = [item.id, tenantId];
+          let idx = 3;
 
           if (item.price !== undefined) {
             updates.push(`price = $${idx++}`);
@@ -176,7 +184,7 @@ fastify.post(
 
           const { rows } = await client.query(
             `UPDATE products SET ${updates.join(', ')}
-             WHERE id = $1
+             WHERE id = $1 AND tenant_id = $2
              RETURNING id, version, updated_at;`,
             params
           );

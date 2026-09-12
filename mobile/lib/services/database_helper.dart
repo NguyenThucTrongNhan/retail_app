@@ -153,13 +153,17 @@ class DatabaseHelper {
   }
 
   // ---------------------------------------------------------------------------
-  // SEARCH — sub-10ms across name, SKU, exact barcode
+  // SEARCH — sub-10ms across name, SKU, exact barcode; supports pagination
   // ---------------------------------------------------------------------------
-  Future<List<Product>> searchProducts(String query) async {
+  Future<List<Product>> searchProducts(
+    String query, {
+    int limit = 30,
+    int offset = 0,
+  }) async {
     final isar = await db;
     final q = query.trim();
     if (q.isEmpty) {
-      return isar.products.where().limit(100).findAll();
+      return isar.products.where().findAll(offset: offset, limit: limit);
     }
     return isar.products
         .filter()
@@ -168,8 +172,7 @@ class DatabaseHelper {
         .skuContains(q, caseSensitive: false)
         .or()
         .barcodeEqualTo(q)
-        .limit(100)
-        .findAll();
+        .findAll(offset: offset, limit: limit);
   }
 
   // ---------------------------------------------------------------------------
@@ -215,6 +218,17 @@ class DatabaseHelper {
   Future<int> getProductCount() async {
     final isar = await db;
     return isar.products.count();
+  }
+
+  // ---------------------------------------------------------------------------
+  // CLEAR — used by Settings > "Clear local data"
+  // ---------------------------------------------------------------------------
+  Future<void> clearLocalData() async {
+    final isar = await db;
+    await isar.writeTxn(() async {
+      await isar.products.clear();
+      await isar.categorys.clear();
+    });
   }
 
   // ---------------------------------------------------------------------------

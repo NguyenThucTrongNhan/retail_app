@@ -18,6 +18,9 @@ dependencies:
   # Networking
   http: ^1.2.0
 
+  # Secure token storage (Android Keystore / iOS Keychain)
+  flutter_secure_storage: ^9.0.0
+
   # Camera — visual search viewfinder
   camera: ^0.10.5+9
 

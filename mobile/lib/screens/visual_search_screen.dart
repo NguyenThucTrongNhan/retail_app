@@ -109,8 +109,8 @@ class _VisualSearchScreenState extends State<VisualSearchScreen> {
   // RESULT BOTTOM SHEET
   // ---------------------------------------------------------------------------
   void _showMatchSheet(Map<String, dynamic> match) {
-    final confidence = ((match['confidence'] as num).toDouble() * 100);
-    final price = (match['price'] as num).toDouble();
+    final confidence = double.parse(match['confidence'].toString()) * 100;
+    final price = double.parse(match['price'].toString());
 
     // Reconstruct a Product-like object from the JSON for the basket callback.
     final product = Product()
@@ -118,7 +118,7 @@ class _VisualSearchScreenState extends State<VisualSearchScreen> {
       ..sku = match['sku'] as String
       ..name = match['name'] as String
       ..price = price
-      ..stockQuantity = match['stock_quantity'] as int
+      ..stockQuantity = int.parse(match['stock_quantity'].toString())
       ..imageUrl = match['image_url'] as String?
       ..version = 0
       ..updatedAt = '';
